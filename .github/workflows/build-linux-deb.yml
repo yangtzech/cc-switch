@@ -68,6 +68,16 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
+      - name: Generate dummy signing key
+        shell: bash
+        run: |
+          KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
+          npx @tauri-apps/cli signer generate -w "$KEY_PATH" || true
+          if [ -f "$KEY_PATH" ]; then
+            KEY_B64=$(base64 < "$KEY_PATH" | tr -d '\r\n')
+            echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
+          fi
+
       - name: Build Tauri App (deb only)
         run: pnpm tauri build --bundles deb
 
