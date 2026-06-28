@@ -63,6 +63,7 @@ jobs:
             wget \
             file \
             patchelf \
+            desktop-file-utils \
             libssl-dev \
             rpm \
             flatpak \
