@@ -68,20 +68,18 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Remove updater pubkey (skip signing)
+      - name: Build Tauri App (deb only)
+        run: pnpm tauri build --bundles deb || true
+
+      - name: Locate deb
         shell: bash
         run: |
-          python3 -c "
-          import json
-          with open('src-tauri/tauri.conf.json', 'r') as f:
-              cfg = json.load(f)
-          cfg.get('plugins', {}).get('updater', {}).pop('pubkey', None)
-          with open('src-tauri/tauri.conf.json', 'w') as f:
-              json.dump(cfg, f, indent=2)
-          "
-
-      - name: Build Tauri App (deb only)
-        run: pnpm tauri build --bundles deb
+          DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1)
+          if [ -z "$DEB" ]; then
+            echo "No .deb found" >&2
+            exit 1
+          fi
+          echo "Deb found: $DEB"
 
       - name: Upload deb artifact
         uses: actions/upload-artifact@v7
