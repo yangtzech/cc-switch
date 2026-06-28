@@ -68,22 +68,16 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build Tauri App (Linux)
-        run: pnpm tauri build --bundles appimage,deb,rpm
+        run: pnpm tauri build --bundles deb
 
       - name: Prepare Linux Assets
         shell: bash
         run: |
           set -euxo pipefail
           mkdir -p release-assets
-          # AppImage
-          APPIMAGE=$(find src-tauri/target/release/bundle -name "*.AppImage" | head -1 || true)
-          [ -n "$APPIMAGE" ] && cp "$APPIMAGE" release-assets/ && echo "AppImage: $(basename "$APPIMAGE")"
-          # deb
-          DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1 || true)
-          [ -n "$DEB" ] && cp "$DEB" release-assets/ && echo "Deb: $(basename "$DEB")"
-          # rpm
-          RPM=$(find src-tauri/target/release/bundle -name "*.rpm" | head -1 || true)
-          [ -n "$RPM" ] && cp "$RPM" release-assets/ && echo "RPM: $(basename "$RPM")"
+          DEB=$(find src-tauri/target/release/bundle -name "*.deb" | head -1)
+          cp "$DEB" release-assets/
+          echo "Deb: $(basename "$DEB")"
           ls -la release-assets/
 
       - name: Upload build artifacts
