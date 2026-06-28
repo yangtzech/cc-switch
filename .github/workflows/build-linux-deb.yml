@@ -68,15 +68,17 @@ jobs:
       - name: Install frontend deps
         run: pnpm install --frozen-lockfile
 
-      - name: Generate dummy signing key
+      - name: Remove updater pubkey (skip signing)
         shell: bash
         run: |
-          KEY_PATH="$RUNNER_TEMP/tauri_signing.key"
-          npx @tauri-apps/cli signer generate -w "$KEY_PATH" || true
-          if [ -f "$KEY_PATH" ]; then
-            KEY_B64=$(base64 < "$KEY_PATH" | tr -d '\r\n')
-            echo "TAURI_SIGNING_PRIVATE_KEY=$KEY_B64" >> "$GITHUB_ENV"
-          fi
+          python3 -c "
+          import json
+          with open('src-tauri/tauri.conf.json', 'r') as f:
+              cfg = json.load(f)
+          cfg.get('plugins', {}).get('updater', {}).pop('pubkey', None)
+          with open('src-tauri/tauri.conf.json', 'w') as f:
+              json.dump(cfg, f, indent=2)
+          "
 
       - name: Build Tauri App (deb only)
         run: pnpm tauri build --bundles deb
