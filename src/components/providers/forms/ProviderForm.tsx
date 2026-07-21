@@ -17,11 +17,11 @@ import { useDarkMode } from "@/hooks/useDarkMode";
 import type {
   ProviderCategory,
   ProviderMeta,
-  ProviderTestConfig,
   ClaudeApiFormat,
   CodexApiFormat,
   CodexCatalogModel,
   CodexChatReasoning,
+  PromptCacheRoutingMode,
   ClaudeApiKeyField,
 } from "@/types";
 import {
@@ -60,8 +60,10 @@ import {
 } from "@/utils/providerConfigUtils";
 import { mergeProviderMeta } from "@/utils/providerMetaUtils";
 import {
+  codexApiFormatFromWireApi,
   extractCodexWireApi,
   setCodexWireApi,
+  extractCodexModelName,
   setCodexModelName as setCodexModelNameInConfig,
 } from "@/utils/providerConfigUtils";
 import { isNonNegativeDecimalString } from "@/types/usage";
@@ -75,6 +77,7 @@ import { ProviderPresetSelector } from "./ProviderPresetSelector";
 import { BasicFormFields } from "./BasicFormFields";
 import { ClaudeFormFields } from "./ClaudeFormFields";
 import { ClaudeDesktopProviderForm } from "./ClaudeDesktopProviderForm";
+import { GrokBuildProviderForm } from "./GrokBuildProviderForm";
 import { CodexFormFields } from "./CodexFormFields";
 import { GeminiFormFields } from "./GeminiFormFields";
 import { OmoFormFields } from "./OmoFormFields";
@@ -131,35 +134,6 @@ type PresetEntry = {
     | HermesProviderPreset;
 };
 
-const codexApiFormatFromWireApi = (
-  wireApi: string | undefined,
-): CodexApiFormat | undefined => {
-  switch (wireApi?.trim().toLowerCase()) {
-    case "chat":
-    case "chat_completions":
-    case "chat-completions":
-    case "openai_chat":
-    case "openai-chat":
-      return "openai_chat";
-    case "responses":
-    case "openai_responses":
-    case "openai-responses":
-      return "openai_responses";
-    default:
-      return undefined;
-  }
-};
-
-// 从已保存的 settingsConfig 推断 Codex 模型映射条目数（用于决定本地路由初始开关）。
-const codexCatalogCountFromSettings = (settingsConfig: unknown): number => {
-  if (settingsConfig && typeof settingsConfig === "object") {
-    const models = (settingsConfig as { modelCatalog?: { models?: unknown } })
-      .modelCatalog?.models;
-    return Array.isArray(models) ? models.length : 0;
-  }
-  return 0;
-};
-
 export const normalizeCodexCatalogModelsForSave = (
   models: CodexCatalogModel[],
 ): CodexCatalogModel[] => {
@@ -180,10 +154,24 @@ export const normalizeCodexCatalogModelsForSave = (
       ? Number.parseInt(rawContextWindow, 10)
       : undefined;
 
+    const inputModalities = item.inputModalities?.filter(
+      (m) => typeof m === "string" && m.trim(),
+    );
+
+    const baseInstructions = item.baseInstructions?.trim();
+
     normalized.push({
       model,
       ...(displayName ? { displayName } : {}),
       ...(contextWindow && contextWindow > 0 ? { contextWindow } : {}),
+      // Native Responses profile overrides (ignored by the chat/proxy profile).
+      ...(typeof item.supportsParallelToolCalls === "boolean"
+        ? { supportsParallelToolCalls: item.supportsParallelToolCalls }
+        : {}),
+      ...(inputModalities && inputModalities.length > 0
+        ? { inputModalities }
+        : {}),
+      ...(baseInstructions ? { baseInstructions } : {}),
     });
   }
 
@@ -256,6 +244,9 @@ export function ProviderForm(props: ProviderFormProps) {
   if (props.appId === "claude-desktop") {
     return <ClaudeDesktopProviderForm {...props} />;
   }
+  if (props.appId === "grokbuild") {
+    return <GrokBuildProviderForm {...props} />;
+  }
 
   return <ProviderFormFull {...props} />;
 }
@@ -326,9 +317,6 @@ function ProviderFormFull({
     return initialData?.meta?.isFullUrl ?? false;
   });
 
-  const [testConfig, setTestConfig] = useState<ProviderTestConfig>(
-    () => initialData?.meta?.testConfig ?? { enabled: false },
-  );
   const [pricingConfig, setPricingConfig] = useState<{
     enabled: boolean;
     costMultiplier?: string;
@@ -364,7 +352,6 @@ function ProviderFormFull({
     setLocalIsFullUrl(
       supportsFullUrl ? (initialData?.meta?.isFullUrl ?? false) : false,
     );
-    setTestConfig(initialData?.meta?.testConfig ?? { enabled: false });
     setPricingConfig({
       enabled:
         initialData?.meta?.costMultiplier !== undefined ||
@@ -375,6 +362,7 @@ function ProviderFormFull({
       ),
     });
     setCodexChatReasoning(initialData?.meta?.codexChatReasoning ?? {});
+    setPromptCacheRouting(initialData?.meta?.promptCacheRouting ?? "auto");
     setCustomUserAgent(initialData?.meta?.customUserAgent ?? "");
     setLocalProxyHeadersOverride(
       formatRequestOverrideObject(
@@ -485,6 +473,7 @@ function ProviderFormFull({
     defaultOpusModelName,
     defaultFableModel,
     defaultFableModelName,
+    subagentModel,
     handleModelChange,
   } = useModelState({
     settingsConfig: form.getValues("settingsConfig"),
@@ -546,6 +535,10 @@ function ProviderFormFull({
     useState<CodexChatReasoning>(
       () => initialData?.meta?.codexChatReasoning ?? {},
     );
+  const [promptCacheRouting, setPromptCacheRouting] =
+    useState<PromptCacheRoutingMode>(
+      () => initialData?.meta?.promptCacheRouting ?? "auto",
+    );
   const [customUserAgent, setCustomUserAgent] = useState<string>(
     () => initialData?.meta?.customUserAgent ?? "",
   );
@@ -567,6 +560,7 @@ function ProviderFormFull({
     codexConfig,
     codexApiKey,
     codexBaseUrl,
+    codexModel,
     codexCatalogModels,
     codexAuthError,
     setCodexAuth,
@@ -574,6 +568,7 @@ function ProviderFormFull({
     setCodexCatalogModels,
     handleCodexApiKeyChange,
     handleCodexBaseUrlChange,
+    handleCodexModelChange,
     handleCodexConfigChange: originalHandleCodexConfigChange,
     resetCodexConfig,
   } = useCodexConfigState({ initialData });
@@ -581,26 +576,42 @@ function ProviderFormFull({
   const initialCodexApiFormat: CodexApiFormat =
     initialData?.meta?.apiFormat === "openai_chat"
       ? "openai_chat"
-      : initialData?.meta?.apiFormat === "openai_responses"
-        ? "openai_responses"
-        : (codexApiFormatFromWireApi(
-            extractCodexWireApi(
-              typeof initialData?.settingsConfig?.config === "string"
-                ? initialData.settingsConfig.config
-                : "",
-            ),
-          ) ?? "openai_responses");
+      : initialData?.meta?.apiFormat === "anthropic"
+        ? "anthropic"
+        : initialData?.meta?.apiFormat === "openai_responses"
+          ? "openai_responses"
+          : (codexApiFormatFromWireApi(
+              extractCodexWireApi(
+                typeof initialData?.settingsConfig?.config === "string"
+                  ? initialData.settingsConfig.config
+                  : "",
+              ),
+            ) ?? "openai_responses");
 
   const [localCodexApiFormat, setLocalCodexApiFormat] =
     useState<CodexApiFormat>(initialCodexApiFormat);
 
-  // 本地路由（接管）开关 —— 纯模型映射门控，与上游格式完全独立。
-  // 没有独立持久化字段，初值仅按「是否已配置模型映射」推断（有 catalog 即视为
-  // 接管已开）。只在 useState 初始化与预设重置点设置，跟 localCodexApiFormat
-  // 对称，避免漂移。
-  const [codexTakeoverEnabled, setCodexTakeoverEnabled] = useState<boolean>(
-    () => codexCatalogCountFromSettings(initialData?.settingsConfig) > 0,
-  );
+  // Auth-field choice for the Anthropic Messages upstream (defaults to the Bearer form)
+  const initialCodexAnthropicAuthField: ClaudeApiKeyField =
+    initialData?.meta?.apiKeyField === "ANTHROPIC_API_KEY"
+      ? "ANTHROPIC_API_KEY"
+      : "ANTHROPIC_AUTH_TOKEN";
+  const [localCodexAnthropicAuthField, setLocalCodexAnthropicAuthField] =
+    useState<ClaudeApiKeyField>(initialCodexAnthropicAuthField);
+
+  // Emulate the Claude Code client: off by default, enabled only when the user explicitly turns it on (true)
+  const [localCodexImpersonateClaudeCode, setLocalCodexImpersonateClaudeCode] =
+    useState<boolean>(initialData?.meta?.impersonateClaudeCode === true);
+
+  // Codex → Anthropic output ceiling override (empty string = use the 8192 default).
+  // Kept as a string so the numeric input can be cleared; parsed on save.
+  const [localCodexMaxOutputTokens, setLocalCodexMaxOutputTokens] =
+    useState<string>(
+      typeof initialData?.meta?.maxOutputTokens === "number" &&
+        initialData.meta.maxOutputTokens > 0
+        ? String(initialData.meta.maxOutputTokens)
+        : "",
+    );
 
   const { configError: codexConfigError, debouncedValidate } =
     useCodexTomlValidation();
@@ -631,7 +642,7 @@ function ProviderFormFull({
       const template = getCodexCustomTemplate();
       resetCodexConfig(template.auth, template.config);
       setCodexChatReasoning({});
-      setCodexTakeoverEnabled(false);
+      setPromptCacheRouting("auto");
     }
   }, [appId, initialData, selectedPresetId, resetCodexConfig]);
 
@@ -1277,12 +1288,20 @@ function ProviderFormFull({
           category !== "official" && (codexConfig ?? "").trim()
             ? setCodexWireApi(codexConfig ?? "", "responses")
             : (codexConfig ?? "");
+        // 模型映射与「路由接管」解耦：对所有非官方供应商，填了就持久化
+        //（Chat 生成兼容路由、原生 Responses 生成 model-catalogs.json），
+        // 留空归一化为 [] 即不写。后端只看 modelCatalog.models 是否非空。
         const normalizedCatalogModels =
-          category !== "official" && codexTakeoverEnabled
+          category !== "official"
             ? normalizeCodexCatalogModelsForSave(codexCatalogModels)
             : [];
-        // Sync first catalog row's model into config.toml so Codex uses it as default
-        if (normalizedCatalogModels.length > 0) {
+        // The default-model field writes the top-level `model` into the TOML
+        // as the user types; only when it was left empty fall back to the
+        // first catalog row so "fill mapping only" keeps its old behavior.
+        if (
+          normalizedCatalogModels.length > 0 &&
+          !extractCodexModelName(normalizedCodexConfig)
+        ) {
           normalizedCodexConfig = setCodexModelNameInConfig(
             normalizedCodexConfig,
             normalizedCatalogModels[0].model,
@@ -1474,9 +1493,15 @@ function ProviderFormFull({
       codexChatReasoning:
         appId === "codex" &&
         category !== "official" &&
-        codexTakeoverEnabled &&
         localCodexApiFormat === "openai_chat"
           ? normalizeCodexChatReasoningForSave(codexChatReasoning)
+          : undefined,
+      promptCacheRouting:
+        appId === "codex" &&
+        category !== "official" &&
+        localCodexApiFormat === "openai_chat" &&
+        promptCacheRouting !== "auto"
+          ? promptCacheRouting
           : undefined,
       customUserAgent:
         (appId === "claude" || appId === "codex") && category !== "official"
@@ -1485,7 +1510,6 @@ function ProviderFormFull({
       localProxyRequestOverrides: shouldApplyLocalProxyRequestOverrides
         ? overridesResult.overrides
         : undefined,
-      testConfig: testConfig.enabled ? testConfig : undefined,
       costMultiplier: pricingConfig.enabled
         ? pricingConfig.costMultiplier
         : undefined,
@@ -1504,6 +1528,28 @@ function ProviderFormFull({
         category !== "official" &&
         localApiKeyField !== "ANTHROPIC_AUTH_TOKEN"
           ? localApiKeyField
+          : appId === "codex" &&
+              category !== "official" &&
+              localCodexApiFormat === "anthropic" &&
+              localCodexAnthropicAuthField !== "ANTHROPIC_AUTH_TOKEN"
+            ? localCodexAnthropicAuthField
+            : undefined,
+      // Off by default; persist true only for codex+anthropic when the user explicitly enables it
+      impersonateClaudeCode:
+        appId === "codex" &&
+        category !== "official" &&
+        localCodexApiFormat === "anthropic" &&
+        localCodexImpersonateClaudeCode
+          ? true
+          : undefined,
+      // Persist only for codex+anthropic when a positive value was entered
+      maxOutputTokens:
+        appId === "codex" &&
+        category !== "official" &&
+        localCodexApiFormat === "anthropic" &&
+        localCodexMaxOutputTokens.trim() !== "" &&
+        Number(localCodexMaxOutputTokens) > 0
+          ? Number(localCodexMaxOutputTokens)
           : undefined,
       isFullUrl:
         supportsFullUrl && category !== "official" && localIsFullUrl
@@ -1623,12 +1669,11 @@ function ProviderFormFull({
         const template = getCodexCustomTemplate();
         resetCodexConfig(template.auth, template.config);
         setCodexChatReasoning({});
+        setPromptCacheRouting("auto");
         setLocalCodexApiFormat(
           codexApiFormatFromWireApi(extractCodexWireApi(template.config)) ??
             "openai_responses",
         );
-        // 自定义模板无模型映射，路由默认关闭
-        setCodexTakeoverEnabled(false);
       }
       if (appId === "gemini") {
         resetGeminiConfig({}, {});
@@ -1666,13 +1711,12 @@ function ProviderFormFull({
 
       resetCodexConfig(auth, config, preset.modelCatalog ?? []);
       setCodexChatReasoning(preset.codexChatReasoning ?? {});
+      setPromptCacheRouting(preset.promptCacheRouting ?? "auto");
       setLocalCodexApiFormat(
         preset.apiFormat ??
           codexApiFormatFromWireApi(extractCodexWireApi(config)) ??
           "openai_responses",
       );
-      // 路由开关与格式无关，仅按预设是否带模型映射决定
-      setCodexTakeoverEnabled((preset.modelCatalog?.length ?? 0) > 0);
 
       form.reset({
         name: preset.nameKey ? t(preset.nameKey) : preset.name,
@@ -2106,6 +2150,7 @@ function ProviderFormFull({
               defaultOpusModelName={defaultOpusModelName}
               defaultFableModel={defaultFableModel}
               defaultFableModelName={defaultFableModelName}
+              subagentModel={subagentModel}
               onModelChange={handleModelChange}
               speedTestEndpoints={speedTestEndpoints}
               apiFormat={localApiFormat}
@@ -2145,12 +2190,20 @@ function ProviderFormFull({
               }
               autoSelect={endpointAutoSelect}
               onAutoSelectChange={setEndpointAutoSelect}
-              takeoverEnabled={codexTakeoverEnabled}
-              onTakeoverEnabledChange={setCodexTakeoverEnabled}
+              codexModel={codexModel}
+              onModelChange={handleCodexModelChange}
               apiFormat={localCodexApiFormat}
               onApiFormatChange={handleCodexApiFormatChange}
+              anthropicAuthField={localCodexAnthropicAuthField}
+              onAnthropicAuthFieldChange={setLocalCodexAnthropicAuthField}
+              impersonateClaudeCode={localCodexImpersonateClaudeCode}
+              onImpersonateClaudeCodeChange={setLocalCodexImpersonateClaudeCode}
+              maxOutputTokens={localCodexMaxOutputTokens}
+              onMaxOutputTokensChange={setLocalCodexMaxOutputTokens}
               codexChatReasoning={codexChatReasoning}
               onCodexChatReasoningChange={setCodexChatReasoning}
+              promptCacheRouting={promptCacheRouting}
+              onPromptCacheRoutingChange={setPromptCacheRouting}
               catalogModels={codexCatalogModels}
               onCatalogModelsChange={setCodexCatalogModels}
               speedTestEndpoints={speedTestEndpoints}
@@ -2205,6 +2258,8 @@ function ProviderFormFull({
               partnerPromotionKey={opencodePartnerPromotionKey}
               baseUrl={opencodeForm.opencodeBaseUrl}
               onBaseUrlChange={opencodeForm.handleOpencodeBaseUrlChange}
+              headers={opencodeForm.opencodeHeaders}
+              onHeadersChange={opencodeForm.handleOpencodeHeadersChange}
               models={opencodeForm.opencodeModels}
               onModelsChange={opencodeForm.handleOpencodeModelsChange}
               extraOptions={opencodeForm.opencodeExtraOptions}
@@ -2430,9 +2485,7 @@ function ProviderFormFull({
             appId !== "openclaw" &&
             appId !== "hermes" && (
               <ProviderAdvancedConfig
-                testConfig={testConfig}
                 pricingConfig={pricingConfig}
-                onTestConfigChange={setTestConfig}
                 onPricingConfigChange={setPricingConfig}
               />
             )}
