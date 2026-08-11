@@ -145,6 +145,35 @@ html.dark {
   color-scheme: dark;
 }
 
+.status-heartbeat {
+  opacity: 1;
+  transition-property: color, opacity;
+  transition-duration: 150ms, 300ms;
+  transition-timing-function: ease, ease-out;
+}
+
+html[data-window-active="true"][data-status-heartbeat="true"]
+  .status-heartbeat {
+  opacity: 0.5;
+}
+
+html[data-window-active="false"] .status-heartbeat {
+  opacity: 1;
+  transition-duration: 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .status-heartbeat {
+    opacity: 1;
+    transition-property: color;
+  }
+
+  html[data-window-active="true"][data-status-heartbeat="true"]
+    .status-heartbeat {
+    opacity: 1;
+  }
+}
+
 ::-webkit-scrollbar {
   display: none;
 }
@@ -190,4 +219,37 @@ html.dark {
 input[type="password"]::-ms-reveal,
 input[type="password"]::-ms-clear {
   display: none;
+}
+
+/*
+ * Usage date-range picker popover.
+ *
+ * The two-column layout (date fields | calendar) must depend on how much
+ * width the popover itself actually has — not on the viewport. The popover is
+ * clamped to `100vw - 2rem` and anchored to its trigger, so a viewport-based
+ * breakpoint (e.g. Tailwind `sm:`) could enable the wide layout while the
+ * popover only had room for one column, pushing the calendar off-screen.
+ *
+ * A container query keys the layout to the popover's own inline size. The base
+ * (stacked) layout is the safe fallback when container queries are
+ * unsupported, keeping the calendar fully visible at any width.
+ */
+.usage-range-popover {
+  container-type: inline-size;
+}
+
+@container (min-width: 500px) {
+  .usage-range-layout {
+    flex-direction: row;
+  }
+
+  .usage-range-fields {
+    width: 250px;
+    flex: none;
+  }
+
+  .usage-range-calendar {
+    min-width: 0;
+    flex: 1 1 0%;
+  }
 }

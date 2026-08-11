@@ -2,6 +2,13 @@
 import { IconMetadata } from "@/types/icon";
 
 export const iconMetadata: Record<string, IconMetadata> = {
+  a6api: {
+    name: "a6api",
+    displayName: "A6API",
+    category: "ai-provider",
+    keywords: ["a6api", "a6", "aggregator", "relay", "gateway", "claude"],
+    defaultColor: "#3B82F6",
+  },
   aigocode: {
     name: "aigocode",
     displayName: "AIGoCode",
@@ -56,11 +63,29 @@ export const iconMetadata: Record<string, IconMetadata> = {
   },
   sudocode: {
     name: "sudocode",
-    displayName: "SudoCode",
+    displayName: "SudoCode.chat",
     category: "ai-provider",
     keywords: [
       "sudocode",
       "sudo code",
+      "chat",
+      "gateway",
+      "relay",
+      "claude",
+      "codex",
+      "gemini",
+      "openclaw",
+    ],
+    defaultColor: "#111111",
+  },
+  "sudocode-us": {
+    name: "sudocode-us",
+    displayName: "SudoCode.us",
+    category: "ai-provider",
+    keywords: [
+      "sudocode",
+      "sudo code",
+      "us",
       "gateway",
       "relay",
       "claude",
@@ -76,6 +101,13 @@ export const iconMetadata: Record<string, IconMetadata> = {
     category: "ai-provider",
     keywords: ["qwen", "tongyi"],
     defaultColor: "#FF6A00",
+  },
+  amux: {
+    name: "amux",
+    displayName: "Amux",
+    category: "ai-provider",
+    keywords: ["amux", "amuxapi", "aggregator", "relay", "gateway", "gpt"],
+    defaultColor: "#000000",
   },
   anthropic: {
     name: "anthropic",
@@ -204,6 +236,13 @@ export const iconMetadata: Record<string, IconMetadata> = {
     keywords: ["cloudflare", "cdn"],
     defaultColor: "#F38020",
   },
+  code0: {
+    name: "code0",
+    displayName: "Code0",
+    category: "ai-provider",
+    keywords: ["code0", "code0ai", "aggregator", "relay", "gateway", "gpt"],
+    defaultColor: "#20C050",
+  },
   cohere: {
     name: "cohere",
     displayName: "Cohere",
@@ -224,6 +263,52 @@ export const iconMetadata: Record<string, IconMetadata> = {
     category: "ai-provider",
     keywords: ["etok", "ai", "programming"],
     defaultColor: "#F97316",
+  },
+  fenno: {
+    name: "fenno",
+    displayName: "FennoAI",
+    category: "ai-provider",
+    keywords: [
+      "fenno",
+      "fennoai",
+      "aggregator",
+      "relay",
+      "claude",
+      "codex",
+      "gpt",
+      "gateway",
+    ],
+    defaultColor: "#000000",
+  },
+  zetaapi: {
+    name: "zetaapi",
+    displayName: "ZetaAPI",
+    category: "ai-provider",
+    keywords: [
+      "zetaapi",
+      "zeta",
+      "aggregator",
+      "relay",
+      "claude",
+      "gpt",
+      "gateway",
+    ],
+    defaultColor: "#000000",
+  },
+  teamorouter: {
+    name: "teamorouter",
+    displayName: "TeamoRouter",
+    category: "ai-provider",
+    keywords: [
+      "teamorouter",
+      "teamo",
+      "router",
+      "aggregator",
+      "relay",
+      "gateway",
+      "gpt",
+    ],
+    defaultColor: "#000000",
   },
   cubence: {
     name: "cubence",
@@ -357,6 +442,13 @@ export const iconMetadata: Record<string, IconMetadata> = {
     category: "ai-provider",
     keywords: ["mistral"],
     defaultColor: "#FF7000",
+  },
+  nekocode: {
+    name: "nekocode",
+    displayName: "NekoCode",
+    category: "ai-provider",
+    keywords: ["nekocode", "neko", "aggregator", "relay", "gateway", "gpt"],
+    defaultColor: "#A64BC4",
   },
   newapi: {
     name: "newapi",
@@ -511,6 +603,24 @@ export const iconMetadata: Record<string, IconMetadata> = {
     keywords: ["pipellm", "pipe"],
     defaultColor: "currentColor",
   },
+  qiniu: {
+    name: "qiniu",
+    displayName: "七牛云",
+    category: "ai-provider",
+    keywords: [
+      "qiniu",
+      "qnaigc",
+      "modelink",
+      "aggregator",
+      "relay",
+      "claude",
+      "codex",
+      "gpt",
+      "gemini",
+      "gateway",
+    ],
+    defaultColor: "#00AAE7",
+  },
   runapi: {
     name: "runapi",
     displayName: "RunAPI",
@@ -592,6 +702,13 @@ export const iconMetadata: Record<string, IconMetadata> = {
     category: "ai-provider",
     keywords: ["stepfun", "step", "jieyue", "阶跃星辰"],
     defaultColor: "#005AFF",
+  },
+  ppio: {
+    name: "ppio",
+    displayName: "PPIO",
+    category: "ai-provider",
+    keywords: ["ppio", "派欧云"],
+    defaultColor: "#2874FF",
   },
 };
 

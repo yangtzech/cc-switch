@@ -172,7 +172,7 @@ export function CommonConfigEditor({
               />
               <span>
                 {t("claudeConfig.writeCommonConfig", {
-                  defaultValue: "写入通用配置",
+                  defaultValue: "应用通用配置",
                 })}
               </span>
             </label>
@@ -257,7 +257,7 @@ export function CommonConfigEditor({
   }
 }`}
           darkMode={isDarkMode}
-          rows={14}
+          rows={3}
           showValidation={true}
           language="json"
         />
