@@ -3,9 +3,15 @@ name: Build Linux Deb
 on:
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Upstream release/tag that triggered this build'
+        required: false
+        type: string
 
 concurrency:
-  group: build-linux-deb-${{ github.ref }}
+  group: build-linux-deb-${{ github.ref }}-${{ inputs.upstream_tag || 'manual' }}
   cancel-in-progress: true
 
 jobs:

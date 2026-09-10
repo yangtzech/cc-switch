@@ -1,0 +1,152 @@
+name: Sync Upstream Release
+
+on:
+  schedule:
+    # GitHub schedules use UTC. Run every six hours.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+    inputs:
+      upstream_tag:
+        description: 'Optional upstream tag to sync (for example: v3.20.2)'
+        required: false
+        type: string
+
+permissions:
+  actions: write
+  contents: write
+
+concurrency:
+  group: sync-upstream-release
+  cancel-in-progress: false
+
+env:
+  UPSTREAM_REPOSITORY: farion1231/cc-switch
+  FEATURE_BRANCH: feat/linux-claude-desktop-3p
+  TAG_SUFFIX: linux-claude-desktop-3p
+
+jobs:
+  sync:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout feature branch
+        uses: actions/checkout@v6
+        with:
+          ref: ${{ env.FEATURE_BRANCH }}
+          fetch-depth: 0
+
+      - name: Resolve upstream release or tag
+        id: upstream
+        shell: bash
+        env:
+          REQUESTED_TAG: ${{ inputs.upstream_tag }}
+        run: |
+          set -euo pipefail
+
+          tag="$REQUESTED_TAG"
+          if [ -z "$tag" ]; then
+            # Every GitHub release points at a tag. Looking at tags directly
+            # also catches tags that have not been turned into a Release.
+            tag=$(git ls-remote --tags --refs \
+              "https://github.com/$UPSTREAM_REPOSITORY.git" \
+              | awk '{ sub("refs/tags/", "", $2); print $2 }' \
+              | sort -V \
+              | tail -n 1)
+          fi
+          if [ -z "$tag" ]; then
+            echo "::error::Could not resolve an upstream release or tag."
+            exit 1
+          fi
+
+          fork_tag="${tag}.${TAG_SUFFIX}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "fork_tag=$fork_tag" >> "$GITHUB_OUTPUT"
+          echo "Resolved upstream tag: $tag"
+
+      - name: Check whether this release is already synced
+        id: check
+        shell: bash
+        env:
+          FORK_TAG: ${{ steps.upstream.outputs.fork_tag }}
+        run: |
+          set -euo pipefail
+          if git ls-remote --exit-code --tags origin "refs/tags/$FORK_TAG" >/dev/null 2>&1; then
+            echo "already_synced=true" >> "$GITHUB_OUTPUT"
+            echo "$FORK_TAG already exists; nothing to do."
+          else
+            echo "already_synced=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Fetch and validate upstream
+        if: steps.check.outputs.already_synced != 'true'
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git remote add upstream "https://github.com/$UPSTREAM_REPOSITORY.git"
+          git fetch --prune upstream main "refs/tags/$UPSTREAM_TAG:refs/tags/upstream-$UPSTREAM_TAG"
+
+          if ! git merge-base --is-ancestor "upstream-$UPSTREAM_TAG" upstream/main; then
+            echo "::error::Tag $UPSTREAM_TAG is not contained in upstream/main."
+            exit 1
+          fi
+      - name: Merge upstream into fork branches
+        if: steps.check.outputs.already_synced != 'true'
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+
+          # Keep the automation commit on the fork's default branch while
+          # merging all new upstream commits without rewriting fork history.
+          git checkout -B main origin/main
+          git merge --no-edit upstream/main
+
+          git checkout "$FEATURE_BRANCH"
+          git merge --no-edit main
+          git tag -a "${UPSTREAM_TAG}.${TAG_SUFFIX}" \
+            -m "Linux Claude Desktop 3P build for upstream ${UPSTREAM_TAG}"
+
+      - name: Push synchronized branches and tag
+        if: steps.check.outputs.already_synced != 'true'
+        shell: bash
+        env:
+          FORK_TAG: ${{ steps.upstream.outputs.fork_tag }}
+        run: |
+          set -euo pipefail
+          git push origin main:main
+          git push origin "$FEATURE_BRANCH:$FEATURE_BRANCH" "refs/tags/$FORK_TAG"
+
+      # Pushes made with GITHUB_TOKEN do not trigger another push workflow, so
+      # dispatch the deb build explicitly after the synchronized branch exists.
+      - name: Trigger Linux deb build
+        if: steps.check.outputs.already_synced != 'true'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+        run: |
+          set -euo pipefail
+          gh workflow run build-linux-deb.yml \
+            --ref "$FEATURE_BRANCH" \
+            -f "upstream_tag=$UPSTREAM_TAG"
+
+      - name: Summary
+        shell: bash
+        env:
+          UPSTREAM_TAG: ${{ steps.upstream.outputs.tag }}
+          FORK_TAG: ${{ steps.upstream.outputs.fork_tag }}
+          ALREADY_SYNCED: ${{ steps.check.outputs.already_synced }}
+        run: |
+          if [ "$ALREADY_SYNCED" = 'true' ]; then
+            echo "### Already synchronized: $FORK_TAG" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Synchronized upstream $UPSTREAM_TAG" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Updated \`main\` from \`$UPSTREAM_REPOSITORY\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Updated \`$FEATURE_BRANCH\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Created \`$FORK_TAG\`" >> "$GITHUB_STEP_SUMMARY"
+            echo "- Dispatched the Linux deb build" >> "$GITHUB_STEP_SUMMARY"
+          fi
